@@ -38,9 +38,14 @@ interface TokenGeneratorWorker extends Omit<Worker, "postMessage"> {
 export function poTokenGenerate(
     config: Config,
     metrics: Metrics | undefined,
+    authenticatedClient?: Innertube,
 ): Promise<PoTokenResult> {
     if (generationInFlight) return generationInFlight;
-    generationInFlight = generatePoToken(config, metrics).finally(() => {
+    generationInFlight = generatePoToken(
+        config,
+        metrics,
+        authenticatedClient,
+    ).finally(() => {
         generationInFlight = undefined;
     });
     return generationInFlight;
@@ -49,6 +54,7 @@ export function poTokenGenerate(
 async function generatePoToken(
     config: Config,
     metrics: Metrics | undefined,
+    authenticatedClient?: Innertube,
 ): Promise<PoTokenResult> {
     const fetchImpl = getFetchClient(config);
     let generation;
@@ -56,6 +62,7 @@ async function generatePoToken(
         generation = await createCamoufoxPoTokenGeneration(
             fetchImpl,
             config.youtube_session.cookies,
+            authenticatedClient,
         );
     } catch (error) {
         if (error instanceof BrowserPoTokenUnavailableError) {
@@ -341,11 +348,17 @@ async function checkToken({
                     continue;
                 }
 
+                // googlevideo rejects HEAD requests with 403; use a small range
+                // GET (206) like a real player does.
                 const result = await fetchImpl(validFormat?.url, {
-                    method: "HEAD",
+                    method: "GET",
+                    headers: {
+                        "Range": "bytes=0-1023",
+                        "User-Agent": "Mozilla/5.0",
+                    },
                 });
 
-                if (result.status !== 200) {
+                if (result.status !== 200 && result.status !== 206) {
                     console.log(
                         `[WARN] Got status ${result.status} for video ${video.id}, trying next video`,
                     );

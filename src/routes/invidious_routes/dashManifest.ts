@@ -55,6 +55,9 @@ dashManifest.get("/:videoId", async (c) => {
         config,
         tokenMinter: tokenMinter!,
         metrics,
+        // Always fetch fresh from YouTube so videoplayback URLs are bound to
+        // the current exit IP (cached responses go stale when the exit rotates).
+        overrideCache: true,
     });
     const videoInfo = youtubeVideoInfo(
         innertubeClient,

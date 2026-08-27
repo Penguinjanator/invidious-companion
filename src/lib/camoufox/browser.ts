@@ -7,6 +7,7 @@ const CAMOU_CONFIG_PREFIX = "CAMOU_CONFIG_";
 
 export async function launchCamoufox(
     operatingSystem: FingerprintOperatingSystem,
+    proxy?: string,
 ): Promise<Browser> {
     const { launchOptions } = await import("camoufox-js");
     const webGLFingerprint = sampleWebGL(toCamoufoxOperatingSystem(
@@ -29,6 +30,9 @@ export async function launchCamoufox(
         os: operatingSystem,
         timeout: 60_000,
     });
+    if (proxy) {
+        options.proxy = { server: proxy };
+    }
     options.firefoxUserPrefs ??= {};
     options.firefoxUserPrefs["webgl.disabled"] = false;
     options.firefoxUserPrefs["webgl.enable-webgl2"] = webGl2Enabled;

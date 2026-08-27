@@ -77,8 +77,16 @@ if (!innertubeClientOauthEnabled) {
 
 Platform.shim.eval = jsInterpreter;
 
+// Persist YouTube.js's session cache (OAuth2 tokens, session data) under
+// config.cache.directory so authenticated sessions survive container
+// restarts. The path is already granted write access in the image.
+const sessionCache = new Platform.shim.Cache(
+    true,
+    `${config.cache.directory}/youtubei.js`,
+);
 innertubeClient = await Innertube.create({
-    enable_session_cache: false,
+    enable_session_cache: true,
+    cache: sessionCache,
     retrieve_player: innertubeClientFetchPlayer,
     fetch: getFetchClient(config),
     cookie: innertubeClientCookies || undefined,
@@ -157,8 +165,31 @@ if (!innertubeClientOauthEnabled) {
     // Attempt to sign in and then cache the credentials
     await innertubeClient.session.signIn();
     await innertubeClient.session.oauth.cacheCredentials();
-    // Resolve promise for tests
-    tokenMinterReadyResolve?.();
+
+    // Start PO token generation in the background using the authenticated
+    // OAuth session. Google trusts tokens minted from a logged-in session.
+    console.log("[INFO] Starting PO token generation in background (OAuth)...");
+    if (innertubeClientJobPoTokenEnabled) {
+        retry(
+            poTokenGenerate.bind(
+                poTokenGenerate,
+                config,
+                metrics,
+                innertubeClient,
+            ),
+            { minTimeout: 1_000, maxTimeout: 60_000, multiplier: 5, jitter: 0 },
+        ).then((result) => {
+            tokenMinter = result.tokenMinter;
+            tokenMinterReadyResolve?.();
+        }).catch((err) => {
+            console.error("[ERROR] Failed to initialize PO token:", err);
+            metrics?.potokenGenerationFailure.inc();
+            tokenMinterReadyResolve?.();
+        });
+    } else {
+        // Resolve promise for tests
+        tokenMinterReadyResolve?.();
+    }
 }
 
 companionApp.use("*", async (c, next) => {

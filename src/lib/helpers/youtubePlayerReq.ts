@@ -48,10 +48,10 @@ export const youtubePlayerReq = async (
 ): Promise<ApiResponse> => {
     const innertubeClientOauthEnabled = config.youtube_session.oauth_enabled;
 
-    let innertubeClientUsed = "WEB";
-    if (innertubeClientOauthEnabled) {
-        innertubeClientUsed = "TV";
-    }
+    // WEB returns UMP responses (server-side ABR URL, no per-format URLs).
+    // MWEB still returns classic per-format URLs, so prefer it for validation.
+    // Keep MWEB even with OAuth enabled - TV client is rejected by YouTube now.
+    const innertubeClientUsed = "MWEB";
 
     const contentPoToken = await tokenMinter(videoId);
 
@@ -74,7 +74,7 @@ export const youtubePlayerReq = async (
             "[WARNING] No URLs found for adaptive formats. Falling back to other YT clients.",
         );
         const innertubeClientsTypeFallback = [
-            "TV_SIMPLY",
+            "TVHTML5_SIMPLY",
             "ANDROID_VR",
             "MWEB",
         ];

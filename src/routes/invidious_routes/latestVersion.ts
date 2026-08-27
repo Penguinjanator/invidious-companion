@@ -59,6 +59,8 @@ latestVersion.get("/", async (c) => {
         config,
         tokenMinter: tokenMinter!,
         metrics,
+        // Always fetch fresh so videoplayback URLs match the current exit IP.
+        overrideCache: true,
     });
     const videoInfo = youtubeVideoInfo(
         innertubeClient,

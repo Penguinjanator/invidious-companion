@@ -77,12 +77,17 @@ videoPlaybackProxy.get("/", async (c) => {
     const rangeHeader = c.req.header("range");
     const requestBytes = rangeHeader ? rangeHeader.split("=")[1] : null;
     const [firstByte, lastByte] = requestBytes?.split("-") || [];
-    if (requestBytes) {
-        queryParams.append(
-            "range",
-            requestBytes,
-        );
-    }
+    // googlevideo rejects HEAD requests with no range or open-ended ranges
+    // (e.g. "bytes=0-") with 403. Always send a bounded range for the HEAD
+    // probe so it succeeds; the actual media response below still streams the
+    // full content when the client did not request a range.
+    const boundedRequestBytes = (requestBytes && !lastByte)
+        ? `${firstByte}-${Number(firstByte) + 1_048_575}`
+        : (requestBytes ? requestBytes : `0-${1_048_575}`);
+    queryParams.append(
+        "range",
+        boundedRequestBytes,
+    );
 
     const headersToSend: HeadersInit = {
         "accept": "*/*",
@@ -139,7 +144,12 @@ videoPlaybackProxy.get("/", async (c) => {
         });
     }
 
+    // The POST streams the actual media. Use the original (possibly open-ended)
+    // range so the full stream flows; the bounded range was only for the HEAD probe.
     const googleVideoUrl = new URL(location);
+    if (requestBytes) {
+        googleVideoUrl.searchParams.set("range", requestBytes);
+    }
     const postResponse = await fetchClient(googleVideoUrl, {
         method: "POST",
         body: new Uint8Array([0x78, 0]), // protobuf: { 15: 0 } (no idea what it means but this is what YouTube uses),
@@ -164,6 +174,15 @@ videoPlaybackProxy.get("/", async (c) => {
         }"; filename*=UTF-8''${encodeRFC5987ValueChars(title)}`;
     }
 
+    // When the client sent no Range header, the HEAD probe's bounded range
+    // makes its content-length wrong (1MiB). Report the true full size from
+    // the clen query param so the browser doesn't truncate the stream.
+    if (!requestBytes) {
+        const fullLength = queryParams.get("clen");
+        if (fullLength) {
+            headersForResponse["content-length"] = fullLength;
+        }
+    }
     let responseStatus = headResponse.status;
     if (requestBytes && responseStatus == 200) {
         // check for range headers in the forms:
